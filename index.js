@@ -31,27 +31,25 @@ const client = new MongoClient(uri, {
 });
 
 // won url
-const logger = async (req, res, next) => {
-  console.log("called", req.host, req.originalUrl);
+const logger = (req, res, next) => {
+  console.log("log user", req.method, req.url);
   next();
 };
 // verify token
-
-const verifyToken = async (req, res, next) => {
-  const token = req.cookie?.token;
+const verify = (req, res, next) => {
+  const token = req?.cookies?.token;
+  // console.log("tok tok token middle ware", token);
   if (!token) {
-    return res.status(401).send({ massage: "forbidden verify token" });
+    return res.status(401).send({ massage: "unauthorize token" });
+  } else {
+    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decode) => {
+      if (err) {
+        return res.status(401).send({ massage: "unauthorize access" });
+      }
+      req.user = decode;
+      next();
+    });
   }
-  jwt.verifyToken(token, process.env.ACCESS_TOKEN_SECRET, (err, decode) => {
-    if (err) {
-      console.log("error");
-      return res.status(401).send({ massage: "Unauthorize" });
-    }
-    console.log("value is the token", decode);
-    req.user = decode;
-
-    next();
-  });
 };
 
 async function run() {
@@ -68,34 +66,34 @@ async function run() {
 
     // json web token
 
-    app.post("jwt", async (req, res) => {
+    app.post("/jwt", (req, res) => {
       const user = req.body;
       console.log("user toeken ", user);
-      const token = jwt.sign(user, ACCESS_TOKEN_SECRET, { expiresIn: "1h" });
-      console.log(token);
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
+        expiresIn: "1h",
+      });
+      res
+        .cookie("token", token, {
+          httpOnly: true,
+          secure: true,
+          sameSite: "none",
+        })
+        .send({ success: true });
     });
 
-    // web token
-    // app.post("/jwt", logger, async (req, res) => {
-    //   const user = req.body;
+    // json web logOut
 
-    //   console.log(user);
-    //   const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
-    //     expiresIn: "1h",
-    //   });
-    //   res
-    //     .cookie("token", token, {
-    //       httpOnly: true,
-    //       secure: false,
-    //     })
-    //     .send({ success: true });
-    // });
+    app.post("/logOut", (req, res) => {
+      const user = req.body;
+      console.log("log in user ", user);
+      res.clearCookie("token", { maxAge: 0 }).send({ success: true });
+    });
 
     // get methood
-    app.get("/services", logger, async (req, res) => {
+    app.get("/services", async (req, res) => {
       const cursor = servicesCollection.find();
       const result = await cursor.toArray();
-      console.log(result);
+      // console.log(result);
       res.send(result);
     });
 
@@ -112,13 +110,15 @@ async function run() {
     });
 
     // app.get
-    app.get("/booking", async (req, res) => {
+    app.get("/booking", logger, verify, async (req, res) => {
+      // console.log("cook cookis ", req.cookies);
       console.log(req.query.email);
-      // // console.log("tok tok token", req.cookies.token);
-      // console.log("user form valid token", req.user);
-      // if (req.query?.email !== req.user?.email) {
-      //   return res.status(403).send({ massage: "forbidden access" });
-      // }
+      console.log("token woner info ", req.user);
+      // verify access
+      if (req.query?.email !== req.query?.email) {
+        return res.status(403).send({ massage: "forbidden access" });
+      }
+      // query access
       let query = {};
       if (req.query?.email) {
         query = { email: req.query?.email };
@@ -143,7 +143,7 @@ async function run() {
     });
 
     // app.post
-    app.post("/booking", logger, async (req, res) => {
+    app.post("/booking", async (req, res) => {
       const booking = req.body;
       const result = await bookingCollection.insertOne(booking);
       res.send(result);
